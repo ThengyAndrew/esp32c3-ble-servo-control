@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32-C3 BLE 舵机控制</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", sans-serif; }
+    body { margin: 0; background: #10151f; color: #e7edf7; }
+    main { width: min(760px, calc(100% - 32px)); margin: 48px auto; }
+    h1 { margin-bottom: 8px; font-size: 28px; }
+    .hint, #status { color: #aeb9ca; }
+    .panel { margin-top: 24px; padding: 20px; border: 1px solid #2a3850; border-radius: 12px; background: #182232; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    button { border: 0; border-radius: 8px; padding: 10px 16px; color: #fff; background: #2878df; font: inherit; cursor: pointer; }
+    button.secondary { background: #42526a; }
+    button.angle { min-width: 110px; font-size: 18px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #angle { min-width: 120px; text-align: center; font-size: 32px; font-weight: 700; }
+    #log { height: 260px; overflow: auto; margin: 16px 0 0; padding: 14px; border-radius: 8px; background: #0b1019; color: #cfe2ff; font: 13px/1.55 Consolas, monospace; white-space: pre-wrap; }
+    .ok { color: #68dc9b; } .error { color: #ff8794; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ESP32-C3 BLE 舵机控制</h1>
+    <p class="hint">目标设备：ESP32C3-Servo-Control；每次调整 10°</p>
+    <section class="panel">
+      <div class="controls">
+        <button id="connectButton">连接设备</button>
+        <button id="disconnectButton" class="secondary" disabled>断开连接</button>
+      </div>
+      <p id="status" aria-live="polite">状态：未连接</p>
+      <div class="controls">
+        <button id="decreaseButton" class="angle secondary" disabled>− 10°</button>
+        <output id="angle">0°</output>
+        <button id="increaseButton" class="angle" disabled>+ 10°</button>
+      </div>
+      <div id="log" aria-live="polite"></div>
+    </section>
+  </main>
+  <script>
+    const DEVICE_NAME = 'ESP32C3-Servo-Control';
+    const SERVICE_UUID = '5ec5a100-1f4f-4d3c-9a1a-7cbf493a0001';
+    const RX_UUID = '5ec5a101-1f4f-4d3c-9a1a-7cbf493a0001';
+    const TX_UUID = '5ec5a102-1f4f-4d3c-9a1a-7cbf493a0001';
+    const STEP = 10;
+    const MIN_ANGLE = 0;
+    const MAX_ANGLE = 180;
+
+    const connectButton = document.querySelector('#connectButton');
+    const disconnectButton = document.querySelector('#disconnectButton');
+    const decreaseButton = document.querySelector('#decreaseButton');
+    const increaseButton = document.querySelector('#increaseButton');
+    const angleElement = document.querySelector('#angle');
+    const statusElement = document.querySelector('#status');
+    const logElement = document.querySelector('#log');
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let device;
+    let rxCharacteristic;
+    let currentAngle = 0;
+    let handshakeReady = false;
+    let controlPending = false;
+
+    function log(message, kind = '') {
+      const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      const entry = document.createElement('div');
+      entry.textContent = `[${time}] ${message}`;
+      entry.className = kind;
+      logElement.append(entry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    function setStatus(text, kind = '') {
+      statusElement.textContent = `状态：${text}`;
+      statusElement.className = kind;
+    }
+
+    function renderAngle() {
+      angleElement.textContent = `${currentAngle}°`;
+    }
+
+    function updateButtons(isConnected) {
+      connectButton.disabled = isConnected;
+      disconnectButton.disabled = !isConnected;
+      decreaseButton.disabled = !handshakeReady || controlPending || currentAngle <= MIN_ANGLE;
+      increaseButton.disabled = !handshakeReady || controlPending || currentAngle >= MAX_ANGLE;
+    }
+
+    async function send(command) {
+      if (!rxCharacteristic) throw new Error('写入特征尚未就绪');
+      const data = encoder.encode(command);
+      if ('writeValueWithResponse' in rxCharacteristic) {
+        await rxCharacteristic.writeValueWithResponse(data);
+      } else {
+        await rxCharacteristic.writeValue(data);
+      }
+      log(`PC → ESP32: ${command}`);
+    }
+
+    async function handleNotification(event) {
+      const message = decoder.decode(event.target.value).trim();
+      log(`ESP32 → PC: ${message}`, message === 'READY' ? 'ok' : '');
+
+      if (message.startsWith('CHALLENGE:')) {
+        const challenge = message.substring('CHALLENGE:'.length);
+        if (!/^\d+$/.test(challenge)) throw new Error('收到的挑战值格式无效');
+        setStatus('已收到挑战值，正在确认');
+        await send(`CONFIRM:${challenge}`);
+      } else if (message === 'READY') {
+        handshakeReady = true;
+        updateButtons(true);
+        setStatus('握手完成，可以控制舵机', 'ok');
+      } else if (message.startsWith('ANGLE:')) {
+        const value = Number(message.substring('ANGLE:'.length));
+        if (Number.isInteger(value) && value >= MIN_ANGLE && value <= MAX_ANGLE) {
+          currentAngle = value;
+          controlPending = false;
+          renderAngle();
+          updateButtons(true);
+          setStatus(`舵机已设为 ${currentAngle}°`, 'ok');
+        }
+      } else if (message.startsWith('ERROR:')) {
+        controlPending = false;
+        updateButtons(true);
+        setStatus('设备返回错误', 'error');
+      }
+    }
+
+    function handleDisconnect() {
+      handshakeReady = false;
+      controlPending = false;
+      rxCharacteristic = undefined;
+      updateButtons(false);
+      setStatus('已断开');
+      log('BLE 连接已断开');
+    }
+
+    async function connect() {
+      if (!navigator.bluetooth) throw new Error('当前浏览器不支持 Web Bluetooth；请使用最新版 Chrome 或 Edge。');
+      setStatus('请在浏览器弹窗中选择设备');
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: DEVICE_NAME }], optionalServices: [SERVICE_UUID],
+      });
+      device.addEventListener('gattserverdisconnected', handleDisconnect, { once: true });
+      log(`已选择设备：${device.name || '未命名设备'}`);
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      rxCharacteristic = await service.getCharacteristic(RX_UUID);
+      const txCharacteristic = await service.getCharacteristic(TX_UUID);
+      await txCharacteristic.startNotifications();
+      txCharacteristic.addEventListener('characteristicvaluechanged', handleNotification);
+
+      handshakeReady = false;
+      controlPending = false;
+      updateButtons(true);
+      setStatus('已连接，开始握手');
+      log('已订阅设备通知');
+      await send('HELLO');
+    }
+
+    async function changeAngle(delta) {
+      const target = Math.min(MAX_ANGLE, Math.max(MIN_ANGLE, currentAngle + delta));
+      if (target === currentAngle) return;
+      controlPending = true;
+      updateButtons(true);
+      try {
+        await send(`ANGLE:${target}`);
+      } catch (error) {
+        controlPending = false;
+        updateButtons(true);
+        log(`发送失败：${error.message}`, 'error');
+      }
+    }
+
+    connectButton.addEventListener('click', async () => {
+      try { await connect(); }
+      catch (error) {
+        handshakeReady = false;
+        updateButtons(false);
+        setStatus('连接失败', 'error');
+        log(`错误：${error.message}`, 'error');
+      }
+    });
+    disconnectButton.addEventListener('click', () => { if (device?.gatt.connected) device.gatt.disconnect(); });
+    decreaseButton.addEventListener('click', () => changeAngle(-STEP));
+    increaseButton.addEventListener('click', () => changeAngle(STEP));
+  </script>
+</body>
+</html>
