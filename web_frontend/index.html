@@ -24,7 +24,7 @@
 <body>
   <main>
     <h1>ESP32-C3 BLE 舵机控制</h1>
-    <p class="hint">目标设备：ESP32C3-Servo-Control；每次调整 10°</p>
+    <p class="hint">目标设备：ESP32C3-Servo-Control；每次调整 30°</p>
     <section class="panel">
       <div class="controls">
         <button id="connectButton">连接设备</button>
@@ -32,9 +32,9 @@
       </div>
       <p id="status" aria-live="polite">状态：未连接</p>
       <div class="controls">
-        <button id="decreaseButton" class="angle secondary" disabled>− 10°</button>
+        <button id="decreaseButton" class="angle secondary" disabled>− 30°</button>
         <output id="angle">0°</output>
-        <button id="increaseButton" class="angle" disabled>+ 10°</button>
+        <button id="increaseButton" class="angle" disabled>+ 30°</button>
       </div>
       <div id="log" aria-live="polite"></div>
     </section>
@@ -44,7 +44,7 @@
     const SERVICE_UUID = '5ec5a100-1f4f-4d3c-9a1a-7cbf493a0001';
     const RX_UUID = '5ec5a101-1f4f-4d3c-9a1a-7cbf493a0001';
     const TX_UUID = '5ec5a102-1f4f-4d3c-9a1a-7cbf493a0001';
-    const STEP = 10;
+    const STEP = 30;
     const MIN_ANGLE = 0;
     const MAX_ANGLE = 180;
 
