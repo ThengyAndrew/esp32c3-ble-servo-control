@@ -47,6 +47,8 @@
     const STEP = 30;
     const MIN_ANGLE = 0;
     const MAX_ANGLE = 180;
+    const HANDSHAKE_TIMEOUT_MS = 2000;
+    const MAX_HELLO_ATTEMPTS = 3;
 
     const connectButton = document.querySelector('#connectButton');
     const disconnectButton = document.querySelector('#disconnectButton');
@@ -62,6 +64,9 @@
     let currentAngle = 0;
     let handshakeReady = false;
     let controlPending = false;
+    let handshakeState = 'idle';
+    let helloAttempts = 0;
+    let handshakeTimer;
 
     function log(message, kind = '') {
       const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -88,6 +93,60 @@
       increaseButton.disabled = !handshakeReady || controlPending || currentAngle >= MAX_ANGLE;
     }
 
+    function clearHandshakeTimer() {
+      if (handshakeTimer) {
+        clearTimeout(handshakeTimer);
+        handshakeTimer = undefined;
+      }
+    }
+
+    function failHandshake(message, error) {
+      clearHandshakeTimer();
+      handshakeState = 'failed';
+      handshakeReady = false;
+      controlPending = false;
+      updateButtons(Boolean(device?.gatt?.connected));
+      setStatus(message, 'error');
+      if (error) log(`握手失败：${error.message || error}`, 'error');
+    }
+
+    function retryHandshake(reason) {
+      clearHandshakeTimer();
+      if (!device?.gatt?.connected || !rxCharacteristic) return;
+      if (helloAttempts >= MAX_HELLO_ATTEMPTS) {
+        failHandshake(`握手超时；已尝试 ${MAX_HELLO_ATTEMPTS} 次，请断开后重连`);
+        return;
+      }
+      log(`${reason}，正在重试握手（${helloAttempts + 1}/${MAX_HELLO_ATTEMPTS}）`, 'error');
+      void sendHello();
+    }
+
+    async function sendHello() {
+      clearHandshakeTimer();
+      handshakeState = 'waitingChallenge';
+      helloAttempts += 1;
+      setStatus(`已连接，等待设备响应（${helloAttempts}/${MAX_HELLO_ATTEMPTS}）`);
+      try {
+        await send('HELLO');
+        // 若通知在 writeValue 的 await 期间已经到达，不能再补设旧阶段的超时计时器。
+        if (handshakeState === 'waitingChallenge') {
+          handshakeTimer = setTimeout(
+            () => retryHandshake('未收到 CHALLENGE'), HANDSHAKE_TIMEOUT_MS,
+          );
+        }
+      } catch (error) {
+        retryHandshake(`HELLO 发送失败：${error.message || error}`);
+      }
+    }
+
+    function beginHandshake() {
+      clearHandshakeTimer();
+      handshakeReady = false;
+      controlPending = false;
+      helloAttempts = 0;
+      void sendHello();
+    }
+
     async function send(command) {
       if (!rxCharacteristic) throw new Error('写入特征尚未就绪');
       const data = encoder.encode(command);
@@ -100,37 +159,61 @@
     }
 
     async function handleNotification(event) {
-      const message = decoder.decode(event.target.value).trim();
-      log(`ESP32 → PC: ${message}`, message === 'READY' ? 'ok' : '');
+      try {
+        const message = decoder.decode(event.target.value).trim();
+        log(`ESP32 → PC: ${message}`, message === 'READY' ? 'ok' : '');
 
-      if (message.startsWith('CHALLENGE:')) {
-        const challenge = message.substring('CHALLENGE:'.length);
-        if (!/^\d+$/.test(challenge)) throw new Error('收到的挑战值格式无效');
-        setStatus('已收到挑战值，正在确认');
-        await send(`CONFIRM:${challenge}`);
-      } else if (message === 'READY') {
-        handshakeReady = true;
-        updateButtons(true);
-        setStatus('握手完成，可以控制舵机', 'ok');
-      } else if (message.startsWith('ANGLE:')) {
-        const value = Number(message.substring('ANGLE:'.length));
-        if (Number.isInteger(value) && value >= MIN_ANGLE && value <= MAX_ANGLE) {
-          currentAngle = value;
-          controlPending = false;
-          renderAngle();
+        if (message.startsWith('CHALLENGE:')) {
+          const challenge = message.substring('CHALLENGE:'.length);
+          if (!/^\d+$/.test(challenge)) throw new Error('收到的挑战值格式无效');
+          clearHandshakeTimer();
+          handshakeState = 'waitingReady';
+          setStatus('已收到挑战值，正在确认');
+          await send(`CONFIRM:${challenge}`);
+          if (handshakeState === 'waitingReady') {
+            handshakeTimer = setTimeout(
+              () => retryHandshake('未收到 READY'), HANDSHAKE_TIMEOUT_MS,
+            );
+          }
+        } else if (message === 'READY') {
+          clearHandshakeTimer();
+          handshakeState = 'ready';
+          handshakeReady = true;
           updateButtons(true);
-          setStatus(`舵机已设为 ${currentAngle}°`, 'ok');
+          setStatus('握手完成，可以控制舵机', 'ok');
+        } else if (message.startsWith('ANGLE:')) {
+          const value = Number(message.substring('ANGLE:'.length));
+          if (Number.isInteger(value) && value >= MIN_ANGLE && value <= MAX_ANGLE) {
+            currentAngle = value;
+            controlPending = false;
+            renderAngle();
+            updateButtons(true);
+            setStatus(`舵机已设为 ${currentAngle}°`, 'ok');
+          }
+        } else if (message.startsWith('ERROR:')) {
+          controlPending = false;
+          if (handshakeState === 'waitingChallenge' || handshakeState === 'waitingReady') {
+            retryHandshake(`设备返回 ${message}`);
+          } else {
+            updateButtons(true);
+            setStatus('设备返回错误', 'error');
+          }
         }
-      } else if (message.startsWith('ERROR:')) {
-        controlPending = false;
-        updateButtons(true);
-        setStatus('设备返回错误', 'error');
+      } catch (error) {
+        if (handshakeState === 'waitingChallenge' || handshakeState === 'waitingReady') {
+          retryHandshake(`处理设备通知失败：${error.message || error}`);
+        } else {
+          log(`处理设备通知失败：${error.message || error}`, 'error');
+        }
       }
     }
 
     function handleDisconnect() {
+      clearHandshakeTimer();
       handshakeReady = false;
       controlPending = false;
+      handshakeState = 'idle';
+      helloAttempts = 0;
       rxCharacteristic = undefined;
       updateButtons(false);
       setStatus('已断开');
@@ -153,12 +236,9 @@
       await txCharacteristic.startNotifications();
       txCharacteristic.addEventListener('characteristicvaluechanged', handleNotification);
 
-      handshakeReady = false;
-      controlPending = false;
       updateButtons(true);
-      setStatus('已连接，开始握手');
       log('已订阅设备通知');
-      await send('HELLO');
+      beginHandshake();
     }
 
     async function changeAngle(delta) {
