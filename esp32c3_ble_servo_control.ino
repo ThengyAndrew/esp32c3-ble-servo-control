@@ -29,8 +29,19 @@ bool handshakeComplete = false;
 bool servoPwmReady = false;
 uint32_t challenge = 0;
 int currentAngle = MIN_ANGLE;
+uint32_t currentPulseWidthUs = 0;
+uint32_t currentDuty = 0;
 
-void setStatus(const String &status) {
+String makeStatus(const String &state) {
+  return state + ";PWM=" + (servoPwmReady ? "READY" : "NOT_READY")
+    + ";GPIO=" + String(SERVO_PIN)
+    + ";FREQ=" + String(SERVO_FREQUENCY)
+    + ";PULSE_US=" + String(currentPulseWidthUs)
+    + ";DUTY=" + String(currentDuty);
+}
+
+void setStatus(const String &state) {
+  const String status = makeStatus(state);
   statusCharacteristic->setValue(status.c_str());
   Serial.println("Status: " + status);
 }
@@ -57,6 +68,8 @@ bool setServoAngle(int angle) {
   }
 
   currentAngle = targetAngle;
+  currentPulseWidthUs = pulseWidthUs;
+  currentDuty = duty;
   Serial.println("Servo angle: " + String(currentAngle));
   Serial.printf("PWM GPIO%d: %lu us, duty %lu/%lu\n", SERVO_PIN, pulseWidthUs, duty, MAX_DUTY);
   return true;

@@ -29,6 +29,7 @@
       <div class="controls">
         <button id="connectButton">连接设备</button>
         <button id="disconnectButton" class="secondary" disabled>断开连接</button>
+        <button id="diagnosticsButton" class="secondary" disabled>读取设备诊断</button>
       </div>
       <p id="status" aria-live="polite">状态：未连接</p>
       <div class="controls">
@@ -44,6 +45,7 @@
     const SERVICE_UUID = '5ec5a100-1f4f-4d3c-9a1a-7cbf493a0001';
     const RX_UUID = '5ec5a101-1f4f-4d3c-9a1a-7cbf493a0001';
     const TX_UUID = '5ec5a102-1f4f-4d3c-9a1a-7cbf493a0001';
+    const STATUS_UUID = '5ec5a103-1f4f-4d3c-9a1a-7cbf493a0001';
     const STEP = 30;
     const MIN_ANGLE = 0;
     const MAX_ANGLE = 180;
@@ -52,6 +54,7 @@
 
     const connectButton = document.querySelector('#connectButton');
     const disconnectButton = document.querySelector('#disconnectButton');
+    const diagnosticsButton = document.querySelector('#diagnosticsButton');
     const decreaseButton = document.querySelector('#decreaseButton');
     const increaseButton = document.querySelector('#increaseButton');
     const angleElement = document.querySelector('#angle');
@@ -61,6 +64,7 @@
     const decoder = new TextDecoder();
     let device;
     let rxCharacteristic;
+    let statusCharacteristic;
     let currentAngle = 0;
     let handshakeReady = false;
     let controlPending = false;
@@ -89,6 +93,7 @@
     function updateButtons(isConnected) {
       connectButton.disabled = isConnected;
       disconnectButton.disabled = !isConnected;
+      diagnosticsButton.disabled = !isConnected;
       decreaseButton.disabled = !handshakeReady || controlPending || currentAngle <= MIN_ANGLE;
       increaseButton.disabled = !handshakeReady || controlPending || currentAngle >= MAX_ANGLE;
     }
@@ -158,6 +163,20 @@
       log(`PC → ESP32: ${command}`);
     }
 
+    async function readDiagnostics() {
+      if (!statusCharacteristic) throw new Error('状态特征尚未就绪');
+      diagnosticsButton.disabled = true;
+      try {
+        const value = await statusCharacteristic.readValue();
+        const diagnostics = decoder.decode(value).trim();
+        const ready = diagnostics.includes('PWM=READY');
+        log(`设备诊断：${diagnostics}`, ready ? 'ok' : 'error');
+        setStatus(`设备诊断：${diagnostics}`, ready ? 'ok' : 'error');
+      } finally {
+        diagnosticsButton.disabled = !device?.gatt?.connected;
+      }
+    }
+
     async function handleNotification(event) {
       try {
         const message = decoder.decode(event.target.value).trim();
@@ -221,6 +240,7 @@
       handshakeState = 'idle';
       helloAttempts = 0;
       rxCharacteristic = undefined;
+      statusCharacteristic = undefined;
       updateButtons(false);
       setStatus('已断开');
       log('BLE 连接已断开');
@@ -238,6 +258,7 @@
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(SERVICE_UUID);
       rxCharacteristic = await service.getCharacteristic(RX_UUID);
+      statusCharacteristic = await service.getCharacteristic(STATUS_UUID);
       const txCharacteristic = await service.getCharacteristic(TX_UUID);
       await txCharacteristic.startNotifications();
       txCharacteristic.addEventListener('characteristicvaluechanged', handleNotification);
@@ -271,6 +292,13 @@
       }
     });
     disconnectButton.addEventListener('click', () => { if (device?.gatt.connected) device.gatt.disconnect(); });
+    diagnosticsButton.addEventListener('click', async () => {
+      try { await readDiagnostics(); }
+      catch (error) {
+        log(`读取设备诊断失败：${error.message}`, 'error');
+        setStatus('读取设备诊断失败', 'error');
+      }
+    });
     decreaseButton.addEventListener('click', () => changeAngle(-STEP));
     increaseButton.addEventListener('click', () => changeAngle(STEP));
   </script>
