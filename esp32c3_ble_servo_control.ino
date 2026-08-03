@@ -148,6 +148,8 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         sendMessage("ERROR:PWM_NOT_READY");
         return;
       }
+      // 状态特征供前端主动读取诊断；角度变化后必须同步刷新其中的脉宽和占空比。
+      setStatus("READY");
       sendMessage("ANGLE:" + String(currentAngle));
       return;
     }
