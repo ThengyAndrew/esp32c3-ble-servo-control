@@ -9,7 +9,7 @@ constexpr char RX_UUID[]      = "5ec5a101-1f4f-4d3c-9a1a-7cbf493a0001"; // Compu
 constexpr char TX_UUID[]      = "5ec5a102-1f4f-4d3c-9a1a-7cbf493a0001"; // ESP32 -> computer (notify)
 constexpr char STATUS_UUID[]  = "5ec5a103-1f4f-4d3c-9a1a-7cbf493a0001"; // Readable status
 
-// 与 esp32c3_servo_swing 工程保持一致，舵机信号线接 GPIO5。
+// Seeed XIAO ESP32-C3：芯片 GPIO5 对应开发板物理引脚 D3（不是 D5）。
 constexpr int SERVO_PIN = 5;
 constexpr int MIN_ANGLE = 0;
 constexpr int MAX_ANGLE = 180;

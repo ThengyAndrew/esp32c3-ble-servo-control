@@ -1,11 +1,12 @@
-// ESP32-C3 SuperMini GPIO 输出自检
+// Seeed XIAO ESP32-C3 GPIO 输出自检
 // 不依赖 USB 串口或 BLE。每个候选 GPIO 依次输出 6 秒的 50 Hz、50% PWM 方波。
 // 使用示波器测量目标 GPIO 对 GND，即可判断该引脚是否确实有输出。
 
 #include <Arduino.h>
 #include "esp32-hal-ledc.h"
 
-constexpr uint8_t TEST_PINS[] = {1, 3, 4, 5, 6, 7, 10};
+// XIAO 板上可直接访问且适合此测试的芯片 GPIO。
+constexpr uint8_t TEST_PINS[] = {3, 4, 5, 6, 7, 10};
 constexpr size_t TEST_PIN_COUNT = sizeof(TEST_PINS) / sizeof(TEST_PINS[0]);
 constexpr uint32_t TEST_FREQUENCY_HZ = 50;
 constexpr uint8_t TEST_RESOLUTION_BITS = 14;

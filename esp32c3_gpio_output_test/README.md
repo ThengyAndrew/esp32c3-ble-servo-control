@@ -1,6 +1,6 @@
-# ESP32-C3 SuperMini GPIO 输出自检
+# Seeed XIAO ESP32-C3 GPIO 输出自检
 
-此程序用示波器快速确认 ESP32-C3 SuperMini 上可用 GPIO 是否能实际输出 PWM，不依赖 USB 串口或蓝牙。
+此程序用示波器快速确认 Seeed XIAO ESP32-C3 上可用 GPIO 是否能实际输出 PWM，不依赖 USB 串口或蓝牙。
 
 ## 使用方法
 
@@ -12,13 +12,12 @@
 
 | 顺序 | GPIO | 说明 |
 | --- | --- | --- |
-| 1 | GPIO1 | 候选通用输出 |
-| 2 | GPIO3 | 候选通用输出 |
-| 3 | GPIO4 | 推荐作为 GPIO5 的替代测试脚 |
-| 4 | GPIO5 | 当前舵机信号脚 |
-| 5 | GPIO6 | 候选通用输出 |
-| 6 | GPIO7 | 候选通用输出 |
-| 7 | GPIO10 | 候选通用输出 |
+| 1 | GPIO3 | XIAO D1 |
+| 2 | GPIO4 | XIAO D2；推荐替代测试脚 |
+| 3 | GPIO5 | XIAO D3；当前舵机信号脚 |
+| 4 | GPIO6 | XIAO D4 |
+| 5 | GPIO7 | XIAO D5 |
+| 6 | GPIO10 | XIAO D10 |
 
 正常引脚会显示 **50 Hz、50% 占空比、0–3.3 V** 的方波：周期 20 ms，高电平约 10 ms。没有方波或恒定高/低的引脚应避免作为舵机信号输出。
 
