@@ -7,6 +7,7 @@ constexpr int MIN_ANGLE = 0;
 constexpr int MAX_ANGLE = 180;
 constexpr int MIN_PULSE_US = 500;
 constexpr int MAX_PULSE_US = 2400;
+constexpr uint16_t SWEEP_STEP_DELAY_MS = 15;
 
 Servo servo;
 int currentAngle = 0;
@@ -50,15 +51,21 @@ bool parseAngle(const char *text, int &angle) {
 }
 
 void sweepTest() {
-  Serial.println(F("TEST:START"));
-  for (int angle = MIN_ANGLE; angle <= MAX_ANGLE; angle += 30) {
-    setServoAngle(angle);
-    delay(700);
+  Serial.println(F("TEST:SWEEP_0_TO_180"));
+  for (int angle = MIN_ANGLE; angle <= MAX_ANGLE; ++angle) {
+    const int pulseUs = map(angle, MIN_ANGLE, MAX_ANGLE, MIN_PULSE_US, MAX_PULSE_US);
+    servo.writeMicroseconds(pulseUs);
+    currentAngle = angle;
+    delay(SWEEP_STEP_DELAY_MS);
   }
-  for (int angle = MAX_ANGLE - 30; angle >= MIN_ANGLE; angle -= 30) {
-    setServoAngle(angle);
-    delay(700);
+  Serial.println(F("TEST:SWEEP_180_TO_0"));
+  for (int angle = MAX_ANGLE; angle >= MIN_ANGLE; --angle) {
+    const int pulseUs = map(angle, MIN_ANGLE, MAX_ANGLE, MIN_PULSE_US, MAX_PULSE_US);
+    servo.writeMicroseconds(pulseUs);
+    currentAngle = angle;
+    delay(SWEEP_STEP_DELAY_MS);
   }
+  reportStatus();
   Serial.println(F("TEST:DONE"));
 }
 
