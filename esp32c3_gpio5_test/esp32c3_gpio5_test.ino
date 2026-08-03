@@ -1,6 +1,9 @@
 // ESP32-C3 GPIO5 单脚连续 PWM 测试
 // 无需串口、无需蓝牙。示波器地夹接 GND，探头接 GPIO5。
 
+#include <Arduino.h>
+#include "esp32-hal-ledc.h"
+
 constexpr uint8_t TEST_PIN = 5;
 constexpr uint32_t PWM_FREQUENCY_HZ = 50;
 constexpr uint8_t PWM_RESOLUTION_BITS = 14;
