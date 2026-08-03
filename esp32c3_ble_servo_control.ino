@@ -26,6 +26,7 @@ BLECharacteristic *statusCharacteristic;
 BLEAdvertising *advertising;
 bool connected = false;
 bool handshakeComplete = false;
+bool servoPwmReady = false;
 uint32_t challenge = 0;
 int currentAngle = MIN_ANGLE;
 
@@ -40,12 +41,25 @@ void sendMessage(const String &message) {
   if (connected) txCharacteristic->notify();
 }
 
-void setServoAngle(int angle) {
-  currentAngle = constrain(angle, MIN_ANGLE, MAX_ANGLE);
-  const uint32_t pulseWidthUs = map(currentAngle, MIN_ANGLE, MAX_ANGLE, MIN_PULSE_US, MAX_PULSE_US);
+bool setServoAngle(int angle) {
+  if (!servoPwmReady) {
+    Serial.println("ERROR: PWM is not initialized");
+    return false;
+  }
+
+  const int targetAngle = constrain(angle, MIN_ANGLE, MAX_ANGLE);
+  const uint32_t pulseWidthUs = map(targetAngle, MIN_ANGLE, MAX_ANGLE, MIN_PULSE_US, MAX_PULSE_US);
   const uint32_t duty = (pulseWidthUs * MAX_DUTY) / PWM_PERIOD_US;
-  ledcWrite(SERVO_PIN, duty);
+  if (!ledcWrite(SERVO_PIN, duty)) {
+    Serial.println("ERROR: LEDC duty write failed");
+    servoPwmReady = false;
+    return false;
+  }
+
+  currentAngle = targetAngle;
   Serial.println("Servo angle: " + String(currentAngle));
+  Serial.printf("PWM GPIO%d: %lu us, duty %lu/%lu\n", SERVO_PIN, pulseWidthUs, duty, MAX_DUTY);
+  return true;
 }
 
 bool isUnsignedInteger(const String &value) {
@@ -116,7 +130,11 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         sendMessage("ERROR:ANGLE_OUT_OF_RANGE");
         return;
       }
-      setServoAngle(static_cast<int>(requestedAngle));
+      if (!setServoAngle(static_cast<int>(requestedAngle))) {
+        setStatus("PWM_NOT_READY");
+        sendMessage("ERROR:PWM_NOT_READY");
+        return;
+      }
       sendMessage("ANGLE:" + String(currentAngle));
       return;
     }
@@ -132,8 +150,12 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 
 void setup() {
   Serial.begin(115200);
-  ledcAttach(SERVO_PIN, SERVO_FREQUENCY, PWM_RESOLUTION_BITS);
-  setServoAngle(MIN_ANGLE);
+  servoPwmReady = ledcAttach(SERVO_PIN, SERVO_FREQUENCY, PWM_RESOLUTION_BITS);
+  if (!servoPwmReady) {
+    Serial.printf("ERROR: LEDC attach failed on GPIO%d\n", SERVO_PIN);
+  } else if (!setServoAngle(MIN_ANGLE)) {
+    Serial.println("ERROR: Initial servo PWM write failed");
+  }
 
   BLEDevice::init(DEVICE_NAME);
   BLEServer *server = BLEDevice::createServer();

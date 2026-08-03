@@ -195,6 +195,12 @@
           if (handshakeState === 'waitingChallenge' || handshakeState === 'waitingReady') {
             retryHandshake(`设备返回 ${message}`);
           } else {
+            if (message === 'ERROR:PWM_NOT_READY') {
+              handshakeReady = false;
+              updateButtons(true);
+              setStatus('舵机 PWM 初始化失败；请查看 ESP32 串口日志', 'error');
+              return;
+            }
             updateButtons(true);
             setStatus('设备返回错误', 'error');
           }
